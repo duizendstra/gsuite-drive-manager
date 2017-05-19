@@ -200,7 +200,6 @@ function gsuiteDriveManager(mainSpecs) {
     }
 
     function copy(specs) {
-
         return new Promise(function (resolve, reject) {
             var fileId = specs.fileId;
             var request = {
@@ -220,7 +219,6 @@ function gsuiteDriveManager(mainSpecs) {
             if (specs.parents) {
                 request.resource.parents = specs.parents;
             }
-
 
             var operation = retry.operation({
                 retries: 6,
@@ -243,14 +241,6 @@ function gsuiteDriveManager(mainSpecs) {
                     resolve(response);
                 });
             });
-
-            // service.files.copy(request, function (err, response) {
-            //     if (err) {
-            //         reject(err);
-            //         return;
-            //     }
-            //     resolve(response);
-            // });
         });
     }
 
