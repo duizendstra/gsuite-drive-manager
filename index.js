@@ -49,10 +49,10 @@ function gsuiteDriveManager(mainSpecs) {
                 //                throw new Error();
                 var dest = fs.createWriteStream(path);
                 service.files.get(request, function (errortje) {
-                    if (operation.retry(errortje)) {
-                        console.log("Warning, error %s occured, retry %d, %s, file: %s", errortje.code, operation.attempts(), errortje.message, path);
-                    }
-                })
+                        if (operation.retry(errortje)) {
+                            console.log("Warning, error %s occured, retry %d, %s, file: %s", errortje.code, operation.attempts(), errortje.message, path);
+                        }
+                    })
                     .on('error', function (err) {
 
                         if (operation.retry(err)) {
@@ -230,6 +230,42 @@ function gsuiteDriveManager(mainSpecs) {
 
             operation.attempt(function () {
                 service.files.copy(request, function (err, response) {
+                    if (operation.retry(err)) {
+                        console.log("Warning, error %s occured, retry %d", err.code, operation.attempts());
+                        return;
+                    }
+                    if (err) {
+                        reject(operation.mainError());
+                        return;
+                    }
+                    resolve(response);
+                });
+            });
+        });
+    }
+
+    function getFile(specs) {
+        return new Promise(function (resolve, reject) {
+            var fileId = specs.fileId;
+            var request = {
+                auth: auth,
+                fileId: fileId,
+            };
+
+            if (specs.fields) {
+                request.fields = specs.fields;
+            }
+
+            var operation = retry.operation({
+                retries: 6,
+                factor: 3,
+                minTimeout: 1 * 1000,
+                maxTimeout: 60 * 1000,
+                randomize: true
+            });
+
+            operation.attempt(function () {
+                service.files.get(request, function (err, response) {
                     if (operation.retry(err)) {
                         console.log("Warning, error %s occured, retry %d", err.code, operation.attempts());
                         return;
@@ -568,6 +604,7 @@ function gsuiteDriveManager(mainSpecs) {
     auth = mainSpecs.auth;
     return {
         getFiles: getFiles,
+        getFile: getFile,
         copy: copy,
         getPermissions: getPermissions,
         updatePermission: updatePermission,
