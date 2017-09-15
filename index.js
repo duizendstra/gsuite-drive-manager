@@ -1,5 +1,4 @@
 /*global require, console, Promise*/
-/*jslint node: true */
 var google = require('googleapis');
 var retry = require('retry');
 var fs = require("fs");
@@ -46,7 +45,6 @@ function gsuiteDriveManager(mainSpecs) {
             });
 
             operation.attempt(function () {
-                //                throw new Error();
                 var dest = fs.createWriteStream(path);
                 service.files.get(request, function (errortje) {
                         if (operation.retry(errortje)) {
@@ -249,7 +247,7 @@ function gsuiteDriveManager(mainSpecs) {
             var fileId = specs.fileId;
             var request = {
                 auth: auth,
-                fileId: fileId,
+                fileId: fileId
             };
 
             if (specs.fields) {
@@ -289,6 +287,10 @@ function gsuiteDriveManager(mainSpecs) {
                 fileId: fileId,
                 addParents: newParents.join(",")
             };
+
+            if (specs.removeParents) {
+                request.removeParents = specs.removeParents.join(",");
+            }
 
             if (specs.fields) {
                 request.fields = specs.fields;
@@ -503,9 +505,45 @@ function gsuiteDriveManager(mainSpecs) {
             });
 
         });
+    }
 
+    function getOperation() {
+        return retry.operation({
+            retries: 5,
+            factor: 3,
+            minTimeout: 1 * 1000,
+            maxTimeout: 60 * 1000,
+            randomize: true
+        });
+    }
 
+    function deleteFile(specs) {
+        return new Promise(function (resolve, reject) {
+            var request = {
+                auth: auth,
+                fileId: specs.fileId
+            };
 
+            if (specs.fields) {
+                request.fields = specs.fields;
+            }
+
+            var operation = getOperation();
+
+            operation.attempt(function () {
+                service.files.delete(request, function (err, response) {
+                    if (operation.retry(err)) {
+                        console.log("Warning, error %s occured, retry %d", err.code, operation.attempts());
+                        return;
+                    }
+                    if (err) {
+                        reject(operation.mainError());
+                        return;
+                    }
+                    resolve(response);
+                });
+            });
+        });
     }
 
     function deletePermission(specs) {
@@ -612,11 +650,11 @@ function gsuiteDriveManager(mainSpecs) {
         createFile: createFile,
         addParents: addParents,
         deletePermission: deletePermission,
+        deleteFile: deleteFile,
         about: about,
         update: update,
         download: download,
         setProperties: setProperties
     };
 }
-
 module.exports = gsuiteDriveManager;
