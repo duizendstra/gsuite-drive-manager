@@ -138,7 +138,7 @@ function gsuiteDriveManager(mainSpecs) {
             var request = {
                 auth: auth,
                 fileId: fileId,
-                addParents: removeParents.join(",")
+                removeParents: removeParents.join(",")
             };
 
             var operation = getOperation();
