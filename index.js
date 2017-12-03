@@ -131,6 +131,37 @@ function gsuiteDriveManager(mainSpecs) {
         });
     }
 
+    function deleteParents(specs) {
+        return new Promise(function (resolve, reject) {
+            var fileId = specs.fileId;
+            var removeParents = specs.removeParents;
+            var request = {
+                auth: auth,
+                fileId: fileId,
+                addParents: removeParents.join(",")
+            };
+
+            var operation = getOperation();
+
+            if (specs.fields) {
+                request.fields = specs.fields;
+            }
+            operation.attempt(function () {
+                service.files.update(request, function (err, response) {
+                    if (operation.retry(err)) {
+                        console.log("Warning, deleteParents() error %s occured, retry %d", err.code, operation.attempts());
+                        return;
+                    }
+                    if (err) {
+                        reject(operation.mainError());
+                        return;
+                    }
+                    resolve(response);
+                });
+            });
+        });
+    }
+
     function download(specs) {
 
         return new Promise(function (resolve, reject) {
@@ -658,6 +689,7 @@ function gsuiteDriveManager(mainSpecs) {
         addPermission: addPermission,
         createFile: createFile,
         addParents: addParents,
+        deleteParents: deleteParents,
         deletePermission: deletePermission,
         deleteFile: deleteFile,
         about: about,
