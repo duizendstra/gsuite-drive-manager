@@ -1,4 +1,5 @@
 /*global require, console, Promise*/
+var util = require('util');
 var google = require('googleapis');
 var retry = require('retry');
 var fs = require("fs");
@@ -8,20 +9,125 @@ function gsuiteDriveManager(mainSpecs) {
     var auth;
     var service = google.drive('v3');
 
+    function getOperation() {
+        return retry.operation({
+            retries: 5,
+            factor: 3,
+            minTimeout: 1 * 1000,
+            maxTimeout: 60 * 1000,
+            randomize: true
+        });
+    }
+
     function about() {
         return new Promise(function (resolve, reject) {
             var request = {
                 auth: auth,
-                fields: "user(permissionId)"
+                fields: "user(permissionId,emailAddress,me)"
+            };
+            var operation = getOperation();
+
+            operation.attempt(function () {
+                service.about.get(request, function (err, response) {
+                    if (operation.retry(err)) {
+                        console.warn("Warning, about() error %s occured, retry %d", err.code, operation.attempts());
+                        return;
+                    }
+                    if (err) {
+                        reject(operation.mainError());
+                        return;
+                    }
+                    resolve(response);
+                });
+            });
+        });
+    }
+
+    function getFile(specs) {
+        return new Promise(function (resolve, reject) {
+            var fileId = specs.fileId;
+            var request = {
+                auth: auth,
+                fileId: fileId
+            };
+            var operation = getOperation();
+
+            if (specs.fields) {
+                request.fields = specs.fields;
+            }
+
+            operation.attempt(function () {
+                service.files.get(request, function (err, response) {
+                    if (operation.retry(err)) {
+                        console.log("Warning, getFile() error %s occured, retry %d", err.code, operation.attempts());
+                        return;
+                    }
+                    if (err) {
+                        reject(operation.mainError());
+                        return;
+                    }
+                    resolve(response);
+                });
+            });
+        });
+    }
+
+    function getRootfolderId() {
+        return getFile({
+            fileId: "root"
+        });
+    }
+
+    function getFiles(specs) {
+        return new Promise(function (resolve, reject) {
+            var fileSet = [];
+            var request = {
+                auth: auth,
+                pageSize: 500
             };
 
-            service.about.get(request, function (err, response) {
-                if (err) {
-                    reject(err);
-                    return;
+            if (specs.q) {
+                request.q = specs.q;
+            }
+
+            if (specs.fields) {
+                request.fields = specs.fields;
+            }
+
+            function listFiles(pageToken) {
+                var operation = getOperation();
+                if (pageToken) {
+                    request.pageToken = pageToken;
                 }
-                resolve(response);
-            });
+
+                operation.attempt(function () {
+                    service.files.list(request, function (err, response) {
+                        if (operation.retry(err)) {
+                            console.log("Warning, getFiles() error %s occured, retry %d", err.code, operation.attempts());
+                            return;
+                        }
+                        if (err) {
+                            reject(operation.mainError());
+                            return;
+                        }
+                        var files = response.files;
+                        files.forEach(function (file) {
+                            fileSet.push(file);
+                        });
+
+                        if (files.length === 0 && !response.nextPageToken) {
+                            resolve(fileSet);
+                            return;
+                        }
+                        if (!response.nextPageToken) {
+                            resolve(fileSet);
+                            return;
+                        }
+                        listFiles(response.nextPageToken);
+                    });
+                });
+            }
+            listFiles();
         });
     }
 
@@ -46,13 +152,13 @@ function gsuiteDriveManager(mainSpecs) {
 
             operation.attempt(function () {
                 var dest = fs.createWriteStream(path);
-                service.files.get(request, function (errortje) {
+                service.files
+                    .get(request, function (errortje) {
                         if (operation.retry(errortje)) {
                             console.log("Warning, error %s occured, retry %d, %s, file: %s", errortje.code, operation.attempts(), errortje.message, path);
                         }
                     })
                     .on('error', function (err) {
-
                         if (operation.retry(err)) {
                             console.log("Warning On Error, error %s occured, retry %d, %s", err.code, operation.attempts(), err.message);
                             return;
@@ -84,76 +190,8 @@ function gsuiteDriveManager(mainSpecs) {
                     });
             });
         });
-
     }
 
-    function getFiles(specs) {
-
-        return new Promise(function (resolve, reject) {
-            var fileSet = [];
-            var request = {
-                auth: auth,
-                pageSize: 500
-            };
-
-            if (specs.q) {
-                request.q = specs.q;
-            }
-
-            if (specs.fields) {
-                request.fields = specs.fields;
-            }
-
-            function listFiles(pageToken) {
-                if (pageToken) {
-                    request.pageToken = pageToken;
-                }
-                var operation = retry.operation({
-                    retries: 5,
-                    factor: 3,
-                    minTimeout: 1 * 1000,
-                    maxTimeout: 60 * 1000,
-                    randomize: true
-                });
-
-                operation.attempt(function () {
-                    service.files.list(request, function (err, response) {
-                        if (operation.retry(err)) {
-                            console.log("Error " + err.code + " retrieving files, retry " + operation.attempts());
-                            //console.log(err.code);
-                            // reject(err);
-                            return;
-                        }
-                        if (err) {
-                            reject('The API returned an error: ' + err);
-                            return;
-                        }
-                        var files = response.files;
-                        files.forEach(function (file) {
-                            fileSet.push(file);
-                            if (fileSet.length % 1000 === 0) {
-                                console.log("working:fetched %d files for %s", fileSet.length, specs.user);
-                            }
-                        });
-
-                        if (files.length === 0 && !response.nextPageToken) {
-                            console.log("done:fetched %d files for %s", fileSet.length, specs.user);
-                            resolve(fileSet);
-                            return;
-                        }
-                        if (!response.nextPageToken) {
-                            resolve(fileSet);
-                            console.log("done:fetched %d files for %s", fileSet.length, specs.user);
-
-                            return;
-                        }
-                        listFiles(response.nextPageToken);
-                    });
-                });
-            }
-            listFiles();
-        });
-    }
 
     function createFile(specs) {
         return new Promise(function (resolve, reject) {
@@ -242,40 +280,11 @@ function gsuiteDriveManager(mainSpecs) {
         });
     }
 
-    function getFile(specs) {
-        return new Promise(function (resolve, reject) {
-            var fileId = specs.fileId;
-            var request = {
-                auth: auth,
-                fileId: fileId
-            };
 
-            if (specs.fields) {
-                request.fields = specs.fields;
-            }
 
-            var operation = retry.operation({
-                retries: 6,
-                factor: 3,
-                minTimeout: 1 * 1000,
-                maxTimeout: 60 * 1000,
-                randomize: true
-            });
-
-            operation.attempt(function () {
-                service.files.get(request, function (err, response) {
-                    if (operation.retry(err)) {
-                        console.log("Warning, error %s occured, retry %d", err.code, operation.attempts());
-                        return;
-                    }
-                    if (err) {
-                        reject(operation.mainError());
-                        return;
-                    }
-                    resolve(response);
-                });
-            });
-        });
+    function getRootFiles(specs) {
+        specs.q = util.format("\"%s\" in owners and \"root\" in parents", specs.primaryEmail);
+        return getFiles(specs);
     }
 
     function addParents(specs) {
@@ -352,16 +361,25 @@ function gsuiteDriveManager(mainSpecs) {
     function addPermission(specs) {
         return new Promise(function (resolve, reject) {
             var fileId = specs.fileId;
-            var transferOwnership = specs.transferOwnership;
+            var transferOwnership = false;
+            var sendNotificationEmail = false;
             var role = specs.role;
             var emailAddress = specs.emailAddress;
             var type = specs.type;
+
+            if (specs.transferOwnership === true) {
+                transferOwnership = true;
+            }
+
+            if (specs.sendNotificationEmail === true) {
+                sendNotificationEmail = true;
+            }
+
             var request = {
                 auth: auth,
                 fileId: fileId,
-                // permissionId: permissionId,
                 transferOwnership: transferOwnership,
-                // sendNotificationEmail: false,
+                sendNotificationEmail: sendNotificationEmail,
                 resource: {
                     role: role,
                     emailAddress: emailAddress,
@@ -403,7 +421,6 @@ function gsuiteDriveManager(mainSpecs) {
             });
         });
     }
-
 
     function updatePermission(specs) {
         return new Promise(function (resolve, reject) {
@@ -504,16 +521,6 @@ function gsuiteDriveManager(mainSpecs) {
                 });
             });
 
-        });
-    }
-
-    function getOperation() {
-        return retry.operation({
-            retries: 5,
-            factor: 3,
-            minTimeout: 1 * 1000,
-            maxTimeout: 60 * 1000,
-            randomize: true
         });
     }
 
@@ -643,6 +650,8 @@ function gsuiteDriveManager(mainSpecs) {
     return {
         getFiles: getFiles,
         getFile: getFile,
+        getRootfolderId: getRootfolderId,
+        getRootFiles: getRootFiles,
         copy: copy,
         getPermissions: getPermissions,
         updatePermission: updatePermission,
