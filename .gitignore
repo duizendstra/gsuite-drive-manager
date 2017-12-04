@@ -41,3 +41,5 @@ jspm_packages
 config
 test.js
 test-recursion.js
+test-hasparent.js
+package-lock.json

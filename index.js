@@ -162,6 +162,23 @@ function gsuiteDriveManager(mainSpecs) {
         });
     }
 
+    function hasParent(file, parentId, allFiles, rootFolderId) {
+        if (file.parents === undefined) {
+            return false;
+        }
+
+        if (file.parents.indexOf(parentId) !== -1) {
+            return true;
+        }
+
+        return file.parents.some(function (parent) {
+            if (parent === rootFolderId) {
+                return false;
+            }
+            return hasParent(allFiles[parent], parentId, allFiles, rootFolderId);
+        });
+    }
+
     function download(specs) {
 
         return new Promise(function (resolve, reject) {
@@ -690,6 +707,7 @@ function gsuiteDriveManager(mainSpecs) {
         createFile: createFile,
         addParents: addParents,
         deleteParents: deleteParents,
+        hasParent: hasParent,
         deletePermission: deletePermission,
         deleteFile: deleteFile,
         about: about,
